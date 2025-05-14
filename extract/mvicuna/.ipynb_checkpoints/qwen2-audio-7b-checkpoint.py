@@ -1,0 +1,43 @@
+import torch
+import os
+from transformers import Qwen2AudioForConditionalGeneration, AutoProcessor
+
+folder_name = "qwen2-audio-7b"
+
+def hook_fn(m, i, o, layer_id):
+    save_dir = f"../../../activations/mvicuna/{folder_name}/{current_language}/{text_id}"
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, f"{layer_id}.pt")
+    torch.save(o[0][0, -1, :].detach().cpu(), save_path)
+
+model = Qwen2AudioForConditionalGeneration.from_pretrained(
+    "Qwen/Qwen2-Audio-7B",
+    cache_dir=f'../../../huggingface/{folder_name}/',
+    trust_remote_code=True
+)
+
+processor = AutoProcessor.from_pretrained(
+    "Qwen/Qwen2-Audio-7B",
+    cache_dir=f"../../../huggingface/{folder_name}",
+    trust_remote_code=True
+)
+
+for i, layer in enumerate(model.language_model.model.layers):
+    layer.register_forward_hook(
+        lambda m, i, o, layer_id=i: hook_fn(m, i, o, layer_id=layer_id)
+    )
+
+languages = ['en', 'es', 'fr', 'id', 'ja', 'vi', 'zh']
+for current_language in languages:
+    text_id = 0
+    with open(f"../../../input/mvicuna/{current_language}.txt", "r") as file:
+        for line in file:
+            prompt = line.strip()
+
+            inputs = processor(text=prompt, return_tensors="pt")
+            
+            with torch.no_grad(): 
+                outputs = model(**inputs)
+                print(text_id)
+         
+            text_id = text_id + 1
